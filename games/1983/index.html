@@ -79,6 +79,35 @@
             display: none;
             flex-direction: column;
             gap: 20px;
+            z-index: 10;
+        }
+
+        #controls-screen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.85);
+            border: 2px solid #ffab00;
+            padding: 30px;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            max-width: 500px;
+            z-index: 10;
+        }
+
+        #controls-screen h1 {
+            margin-top: 0;
+            color: #ffab00;
+        }
+
+        #controls-screen p {
+            margin: 5px 0;
+            font-size: 16px;
+            line-height: 1.4;
+            text-align: left;
         }
 
         button {
@@ -107,6 +136,16 @@
         <div id="game-over">
             <h1 id="game-over-text">GAME OVER</h1>
             <button onclick="resetGame()">PLAY AGAIN</button>
+        </div>
+        <div id="controls-screen">
+            <h1>MUMBAI MONSOON</h1>
+            <p><b>Movement:</b> Left/Right Arrows or A/D</p>
+            <p><b>Jump:</b> Up Arrow or W</p>
+            <p><b>Goal:</b> Jump and bump the platform <b>beneath</b> an enemy to stun them. Then, run into them to kick
+                them off-screen!</p>
+            <p><b>POW Block:</b> Hit the center manhole cover from below to shake the screen and stun all grounded
+                enemies (3 uses).</p>
+            <button onclick="startGame()">START GAME</button>
         </div>
     </div>
 
@@ -140,6 +179,7 @@
         let wave = 1;
         let shakeTime = 0;
         let isGameOver = false;
+        let isGameStarted = false;
 
         let keys = { ArrowLeft: false, ArrowRight: false, ArrowUp: false, a: false, d: false, w: false };
 
@@ -517,6 +557,12 @@
             ctx.fillRect(750, 550, 40, 50);
         }
 
+        function startGame() {
+            document.getElementById('controls-screen').style.display = 'none';
+            isGameStarted = true;
+            resetGame();
+        }
+
         function resetGame() {
             score = 0;
             wave = 1;
@@ -526,7 +572,7 @@
             gameOverScreen.style.display = 'none';
             powBlock = new PowBlock();
             player = new Player();
-            initWave();
+            if (isGameStarted) initWave();
         }
 
         function handleGameOver(msg) {
@@ -539,6 +585,16 @@
             let dt = t - dtLast;
             dtLast = t;
             if (dt > 100) dt = 100;
+
+            if (!isGameStarted) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                drawTunnelsAndDrains();
+                powBlock.draw();
+                platforms.forEach(p => p.draw());
+                player.draw();
+                animationId = requestAnimationFrame(loop);
+                return;
+            }
 
             if (shakeTime > 0) shakeTime -= dt;
 
