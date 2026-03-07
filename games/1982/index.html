@@ -1,14 +1,662 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
-    <title>Game 1982</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pac-Man (1982)</title>
     <style>
-        body { background-color: black; color: white; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; font-family: sans-serif; }
-        h1 { text-align: center; }
+        body {
+            margin: 0;
+            background: #000;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-family: 'Courier New', Courier, monospace;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        #game-container {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            max-height: 100vh;
+            max-width: 100vw;
+        }
+
+        .hud {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            max-width: 600px;
+            padding: 10px 20px;
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .score span,
+        .high-score span {
+            color: yellow;
+        }
+
+        canvas {
+            display: block;
+            background: black;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.2);
+            /* Scale canvas responsively max width/height */
+            max-width: 100%;
+            max-height: 80vh;
+            object-fit: contain;
+        }
+
+        .game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            border: 2px solid cyan;
+            padding: 30px;
+            text-align: center;
+            display: none;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .game-over h2 {
+            color: red;
+            margin: 0;
+            font-size: 2rem;
+        }
+
+        .game-over button {
+            background: cyan;
+            color: black;
+            border: none;
+            padding: 10px 20px;
+            font-size: 1.2rem;
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: bold;
+        }
+
+        .game-over button:hover {
+            background: white;
+        }
     </style>
 </head>
+
 <body>
-    <h1>Game for 1982 Under Construction</h1>
+    <div id="game-container">
+        <div class="hud">
+            <div class="score">SCORE: <span id="score-val">0</span></div>
+            <div class="high-score">HIGH SCORE: <span id="highscore-val">0</span></div>
+        </div>
+        <canvas id="gameCanvas" width="380" height="420"></canvas>
+        <div id="gameOverScreen" class="game-over">
+            <h2 id="gameOverText">GAME OVER</h2>
+            <button onclick="resetGame()">PLAY AGAIN</button>
+        </div>
+    </div>
+
+    <script>
+        // --- CONSTANTS & CONFIGURATION ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreEl = document.getElementById('score-val');
+        const highscoreEl = document.getElementById('highscore-val');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+        const gameOverText = document.getElementById('gameOverText');
+
+        const TILE_SIZE = 20; // 19 cols * 20 = 380px wide. 21 rows * 20 = 420px high.
+        const ROWS = 21;
+        const COLS = 19;
+
+        // Logical Maze Map
+        // 1 = Wall, 0 = Pellet, 2 = Power Pellet, 3 = Empty/Tunnel
+        const INITIAL_MAP = [
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [1, 2, 1, 1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 1, 1, 2, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [1, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 0, 1],
+            [1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+            [1, 1, 1, 1, 0, 1, 1, 1, 3, 1, 3, 1, 1, 1, 0, 1, 1, 1, 1],
+            [3, 3, 3, 1, 0, 1, 3, 3, 3, 3, 3, 3, 3, 1, 0, 1, 3, 3, 3],
+            [1, 1, 1, 1, 0, 1, 3, 1, 1, 3, 1, 1, 3, 1, 0, 1, 1, 1, 1],
+            [3, 3, 3, 3, 0, 3, 3, 1, 3, 3, 3, 1, 3, 3, 0, 3, 3, 3, 3], // Row 9: Tunnel wrap
+            [1, 1, 1, 1, 0, 1, 3, 1, 1, 1, 1, 1, 3, 1, 0, 1, 1, 1, 1],
+            [3, 3, 3, 1, 0, 1, 3, 3, 3, 3, 3, 3, 3, 1, 0, 1, 3, 3, 3],
+            [1, 1, 1, 1, 0, 1, 3, 1, 1, 1, 1, 1, 3, 1, 0, 1, 1, 1, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [1, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1],
+            [1, 2, 0, 1, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 1, 0, 2, 1], // Row 15: Pacman starts around here
+            [1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0, 1, 0, 1, 1],
+            [1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+            [1, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 0, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+        ];
+
+        let map = [];
+        let totalPellets = 0;
+        let pelletsEaten = 0;
+        let difficultyIncreased = false;
+
+        // Directions (dx, dy)
+        const DIRS = {
+            NONE: { x: 0, y: 0 },
+            UP: { x: 0, y: -1 },
+            DOWN: { x: 0, y: 1 },
+            LEFT: { x: -1, y: 0 },
+            RIGHT: { x: 1, y: 0 }
+        };
+
+        // --- GAME STATE VARIABLES ---
+        let score = 0;
+        let highScore = localStorage.getItem('pacmanHighScore') || 0;
+        highscoreEl.innerText = highScore;
+
+        let lastTime = 0;
+        let isGameOver = false;
+
+        let powerMode = false;
+        let powerTimer = 0;
+        let ghostsEatenInPowerMode = 0;
+
+        // --- ENTITY CLASSES ---
+        class Entity {
+            constructor(c, r, speed) {
+                this.gridPos = { c, r };
+                // Pixel pos represents top-left of the tile
+                this.pos = { x: c * TILE_SIZE, y: r * TILE_SIZE };
+                this.dir = DIRS.NONE;
+                this.nextDir = DIRS.NONE;
+                this.speed = speed;
+                this.radius = TILE_SIZE / 2;
+                this.baseSpeed = speed;
+            }
+
+            // Checks if a tile is a wall
+            isWall(c, r) {
+                // Wrap around logic for columns
+                if (c < 0 || c >= COLS) return false;
+                if (r < 0 || r >= ROWS) return true;
+                return map[r][c] === 1;
+            }
+
+            // Snap entity to current grid center to ensure clean turns
+            snapToGrid() {
+                this.pos.x = this.gridPos.c * TILE_SIZE;
+                this.pos.y = this.gridPos.r * TILE_SIZE;
+            }
+
+            update(dt) {
+                // Calculate pixel movement based on speed and dt (frames independence)
+                // Using a simpler approach: Move towards target pixel, if reached, re-eval grid
+                let moveDist = this.speed * (dt / 1000);
+
+                // Pixel center of current logical grid cell
+                let targetX = this.gridPos.c * TILE_SIZE;
+                let targetY = this.gridPos.r * TILE_SIZE;
+
+                // Are we at the exact center of a tile? 
+                let atCenter = (Math.abs(this.pos.x - targetX) < 1 && Math.abs(this.pos.y - targetY) < 1);
+
+                if (atCenter) {
+                    this.snapToGrid(); // Perfect precision
+
+                    // Wrap around tunnel constraint: Row 9, Col 0 or Col 18
+                    if (this.gridPos.r === 9) {
+                        if (this.gridPos.c <= 0 && this.dir === DIRS.LEFT) {
+                            this.gridPos.c = COLS - 1;
+                            this.pos.x = this.gridPos.c * TILE_SIZE;
+                        } else if (this.gridPos.c >= COLS - 1 && this.dir === DIRS.RIGHT) {
+                            this.gridPos.c = 0;
+                            this.pos.x = this.gridPos.c * TILE_SIZE;
+                        }
+                    }
+
+                    // Try to turn to nextDir if not wall
+                    if (this.nextDir !== DIRS.NONE && !this.isWall(this.gridPos.c + this.nextDir.x, this.gridPos.r + this.nextDir.y)) {
+                        this.dir = this.nextDir;
+                    }
+
+                    // Stop if hitting a wall in current direction
+                    if (this.dir !== DIRS.NONE && this.isWall(this.gridPos.c + this.dir.x, this.gridPos.r + this.dir.y)) {
+                        this.dir = DIRS.NONE;
+                    }
+
+                    // Next grid cell
+                    if (this.dir !== DIRS.NONE) {
+                        this.gridPos.c += this.dir.x;
+                        this.gridPos.r += this.dir.y;
+                    }
+                }
+
+                // Move towards logical grid pos
+                if (this.dir !== DIRS.NONE) {
+                    let destX = this.gridPos.c * TILE_SIZE;
+                    let destY = this.gridPos.r * TILE_SIZE;
+
+                    if (this.dir === DIRS.LEFT) this.pos.x -= Math.min(moveDist, this.pos.x - destX);
+                    if (this.dir === DIRS.RIGHT) this.pos.x += Math.min(moveDist, destX - this.pos.x);
+                    if (this.dir === DIRS.UP) this.pos.y -= Math.min(moveDist, this.pos.y - destY);
+                    if (this.dir === DIRS.DOWN) this.pos.y += Math.min(moveDist, destY - this.pos.y);
+                }
+            }
+        }
+
+        class Pacman extends Entity {
+            constructor() {
+                // Pacman moves slightly faster than ghosts
+                super(9, 15, 120); // 120px per second
+                this.mouthOpen = 0;
+                this.mouthDir = 1;
+            }
+
+            draw(ctx) {
+                // Animate mouth
+                this.mouthOpen += 0.2 * this.mouthDir;
+                if (this.mouthOpen >= 0.5 || this.mouthOpen <= 0) this.mouthDir *= -1;
+
+                ctx.save();
+                ctx.translate(this.pos.x + TILE_SIZE / 2, this.pos.y + TILE_SIZE / 2);
+
+                // Rotate based on direction
+                if (this.dir === DIRS.LEFT) ctx.rotate(Math.PI);
+                else if (this.dir === DIRS.UP) ctx.rotate(-Math.PI / 2);
+                else if (this.dir === DIRS.DOWN) ctx.rotate(Math.PI / 2);
+
+                ctx.fillStyle = 'yellow';
+                ctx.beginPath();
+                ctx.arc(0, 0, this.radius - 2, this.mouthOpen * Math.PI, (2 - this.mouthOpen) * Math.PI);
+                ctx.lineTo(0, 0);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            update(dt) {
+                super.update(dt);
+                // Check map collision for pellets
+                // Only consider center tile to reliably eat
+                let centerC = Math.round(this.pos.x / TILE_SIZE);
+                let centerR = Math.round(this.pos.y / TILE_SIZE);
+
+                // Ensure within map bounds
+                if (centerC >= 0 && centerC < COLS && centerR >= 0 && centerR < ROWS) {
+                    if (map[centerR][centerC] === 0) {
+                        // Pellet
+                        map[centerR][centerC] = 3;
+                        addScore(10);
+                        pelletsEaten++;
+                        checkDifficulty();
+                    } else if (map[centerR][centerC] === 2) {
+                        // Power Pellet
+                        map[centerR][centerC] = 3;
+                        addScore(50);
+                        pelletsEaten++;
+                        activatePowerMode();
+                        checkDifficulty();
+                    }
+                }
+            }
+        }
+
+        class Ghost extends Entity {
+            constructor(c, r, color, type) {
+                super(c, r, 95); // 95px per second (slower than pacman initially)
+                this.color = color;
+                this.type = type; // 'red', 'pink', 'cyan', 'orange'
+                this.startPos = { c, r };
+                // Pre-calculate spawn pixel pos
+                this.spawnPixelPos = { x: c * TILE_SIZE, y: r * TILE_SIZE };
+                this.dir = DIRS.UP; // Initial movement
+            }
+
+            reset() {
+                this.gridPos.c = this.startPos.c;
+                this.gridPos.r = this.startPos.r;
+                this.pos.x = this.spawnPixelPos.x;
+                this.pos.y = this.spawnPixelPos.y;
+                this.dir = DIRS.UP;
+                this.nextDir = DIRS.NONE;
+            }
+
+            draw(ctx) {
+                ctx.save();
+                ctx.translate(this.pos.x + TILE_SIZE / 2, this.pos.y + TILE_SIZE / 2);
+
+                // Draw Ghost Body
+                ctx.fillStyle = powerMode ? 'blue' : this.color;
+                ctx.beginPath();
+                let r = this.radius - 2;
+                ctx.arc(0, -2, r, Math.PI, 0);
+                ctx.lineTo(r, r);
+                // Wavy bottom
+                ctx.lineTo(r / 3, r - 3);
+                ctx.lineTo(0, r);
+                ctx.lineTo(-r / 3, r - 3);
+                ctx.lineTo(-r, r);
+                ctx.fill();
+
+                // Eyes
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.arc(-3, -4, 3, 0, Math.PI * 2);
+                ctx.arc(3, -4, 3, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Pupils
+                ctx.fillStyle = powerMode ? '#ffa0a0' : 'blue';
+                ctx.beginPath();
+
+                // Look direction
+                let ex = this.dir.x * 2;
+                let ey = this.dir.y * 2;
+                if (powerMode) { ex = 0; ey = 0; } // Scared ghosts look center
+
+                ctx.arc(-3 + ex, -4 + ey, 1.5, 0, Math.PI * 2);
+                ctx.arc(3 + ex, -4 + ey, 1.5, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.restore();
+            }
+
+            update(dt) {
+                // Determine scared logic / speed
+                let currentSpeedBase = difficultyIncreased ? this.baseSpeed * 1.15 : this.baseSpeed;
+                this.speed = powerMode ? currentSpeedBase * 0.5 : currentSpeedBase;
+
+                // Simple State Machine Target calculation at tile centers
+                let targetX = this.gridPos.c * TILE_SIZE;
+                let targetY = this.gridPos.r * TILE_SIZE;
+                let atCenter = (Math.abs(this.pos.x - targetX) < 1 && Math.abs(this.pos.y - targetY) < 1);
+
+                if (atCenter) {
+                    // Time to decide next tile based on AI target
+                    let targetTile = this.calculateTarget();
+
+                    if (powerMode) {
+                        // Scared: Pick random valid direction that isn't backwards
+                        let validDirs = this.getValidDirections();
+                        if (validDirs.length > 0) {
+                            this.nextDir = validDirs[Math.floor(Math.random() * validDirs.length)];
+                        }
+                    } else {
+                        // Pick direction that minimizes linear distance to target
+                        let bestDir = DIRS.NONE;
+                        let minDist = Infinity;
+
+                        let validDirs = this.getValidDirections();
+                        for (let d of validDirs) {
+                            let candC = this.gridPos.c + d.x;
+                            let candR = this.gridPos.r + d.y;
+                            let dist = Math.hypot(candC - targetTile.c, candR - targetTile.r);
+                            if (dist < minDist) {
+                                minDist = dist;
+                                bestDir = d;
+                            }
+                        }
+
+                        if (bestDir !== DIRS.NONE) {
+                            this.nextDir = bestDir;
+                        }
+                    }
+                }
+
+                super.update(dt);
+            }
+
+            getValidDirections() {
+                let valid = [];
+                // Cannot reverse direction directly unless it's the only option
+                let reverse = { x: -this.dir.x, y: -this.dir.y };
+
+                let allDirs = [DIRS.UP, DIRS.LEFT, DIRS.DOWN, DIRS.RIGHT];
+                for (let d of allDirs) {
+                    if (d.x === reverse.x && d.y === reverse.y && (this.dir !== DIRS.NONE)) continue; // Try not to reverse
+
+                    // Wrap around check for tunnels (optional safety check)
+                    let candC = this.gridPos.c + d.x;
+                    let candR = this.gridPos.r + d.y;
+
+                    if (!this.isWall(candC, candR)) {
+                        valid.push(d);
+                    }
+                }
+
+                // If dead end, have to reverse
+                if (valid.length === 0 && this.dir !== DIRS.NONE) {
+                    valid.push(reverse);
+                }
+                return valid;
+            }
+
+            calculateTarget() {
+                // Red: Chases Pacman directly
+                if (this.type === 'red') {
+                    return { c: pacman.gridPos.c, r: pacman.gridPos.r };
+                }
+                // Pink: Targets 4 tiles ahead of pacman
+                else if (this.type === 'pink') {
+                    return {
+                        c: pacman.gridPos.c + (pacman.dir.x * 4),
+                        r: pacman.gridPos.r + (pacman.dir.y * 4)
+                    };
+                }
+                // Cyan / Orange: Semi-random or targeting based on distance
+                else {
+                    let distToPacman = Math.hypot(this.gridPos.c - pacman.gridPos.c, this.gridPos.r - pacman.gridPos.r);
+                    if (distToPacman < 8) { // Trend towards pacman when close
+                        return { c: pacman.gridPos.c, r: pacman.gridPos.r };
+                    } else {
+                        // Random wander coordinate (can be outside map, pathfinding will just get close)
+                        // Using a pseudo-random fixed tile offset gives them 'territory' feel
+                        if (this.type === 'cyan') return { c: COLS - 2, r: ROWS - 2 };
+                        else return { c: 1, r: ROWS - 2 };
+                    }
+                }
+            }
+        }
+
+        // --- GLOBAL GAME OBJECTS ---
+        let pacman;
+        let ghosts = [];
+
+        // --- MAP RENDER LOGIC ---
+        function renderMap(ctx) {
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    let tile = map[r][c];
+                    let x = c * TILE_SIZE;
+                    let y = r * TILE_SIZE;
+
+                    if (tile === 1) {
+                        // Draw Wall
+                        ctx.fillStyle = 'blue';
+                        ctx.fillRect(x + 2, y + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+                        ctx.strokeStyle = '#00ffff';
+                        ctx.strokeRect(x + 2, y + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+                    } else if (tile === 0) {
+                        // Draw Pellet
+                        ctx.fillStyle = 'white';
+                        ctx.fillRect(x + TILE_SIZE / 2 - 2, y + TILE_SIZE / 2 - 2, 4, 4);
+                    } else if (tile === 2) {
+                        // Draw Power Pellet (Pulse effect based on time)
+                        ctx.fillStyle = '#ffb8ae';
+                        let radius = 6 + Math.sin(Date.now() / 150) * 2;
+                        ctx.beginPath();
+                        ctx.arc(x + TILE_SIZE / 2, y + TILE_SIZE / 2, radius, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+            }
+        }
+
+        // --- GAME LOGIC FUNCTIONS ---
+        function initGame() {
+            // Hard copy the initial map
+            map = INITIAL_MAP.map(row => [...row]);
+
+            // Count pellets
+            totalPellets = 0;
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    if (map[r][c] === 0 || map[r][c] === 2) totalPellets++;
+                }
+            }
+            pelletsEaten = 0;
+            difficultyIncreased = false;
+
+            pacman = new Pacman();
+
+            // Spawn ghosts in middle area (row 9, cols 8, 9, 10)
+            ghosts = [
+                new Ghost(9, 7, 'red', 'red'),
+                new Ghost(8, 9, 'pink', 'pink'),
+                new Ghost(9, 9, 'cyan', 'cyan'),
+                new Ghost(10, 9, 'orange', 'orange')
+            ];
+
+            score = 0;
+            updateScore();
+            isGameOver = false;
+            powerMode = false;
+            gameOverScreen.style.display = 'none';
+        }
+
+        function activatePowerMode() {
+            powerMode = true;
+            powerTimer = 7000; // 7 seconds
+            ghostsEatenInPowerMode = 0;
+        }
+
+        function checkDifficulty() {
+            if (!difficultyIncreased && pelletsEaten >= totalPellets * 0.75) {
+                difficultyIncreased = true;
+            }
+            if (pelletsEaten >= totalPellets) {
+                // Game Won
+                handleGameOver("YOU WIN!");
+            }
+        }
+
+        function addScore(points) {
+            score += points;
+            updateScore();
+        }
+
+        function updateScore() {
+            scoreEl.innerText = score;
+            if (score > highScore) {
+                highScore = score;
+                highscoreEl.innerText = highScore;
+                localStorage.setItem('pacmanHighScore', highScore);
+            }
+        }
+
+        function handleCollisions() {
+            for (let i = 0; i < ghosts.length; i++) {
+                let g = ghosts[i];
+                // Simple distance collision
+                let dist = Math.hypot(pacman.pos.x - g.pos.x, pacman.pos.y - g.pos.y);
+                if (dist < TILE_SIZE - 4) { // Tight collision box
+                    if (powerMode) {
+                        // Pacman eats ghost
+                        addScore(200 * Math.pow(2, ghostsEatenInPowerMode));
+                        ghostsEatenInPowerMode++;
+                        g.reset(); // Send to spawn instantly (simplified mechanic)
+                    } else {
+                        // Ghost eats pacman
+                        handleGameOver("GAME OVER");
+                    }
+                }
+            }
+        }
+
+        function handleGameOver(msg) {
+            isGameOver = true;
+            gameOverText.innerText = msg;
+            gameOverScreen.style.display = 'flex';
+        }
+
+        function resetGame() {
+            initGame();
+        }
+
+        // --- INPUT HANDLING ---
+        window.addEventListener('keydown', (e) => {
+            if (isGameOver) return;
+            switch (e.key.toLowerCase()) {
+                case 'arrowup':
+                case 'w':
+                    pacman.nextDir = DIRS.UP; break;
+                case 'arrowdown':
+                case 's':
+                    pacman.nextDir = DIRS.DOWN; break;
+                case 'arrowleft':
+                case 'a':
+                    pacman.nextDir = DIRS.LEFT; break;
+                case 'arrowright':
+                case 'd':
+                    pacman.nextDir = DIRS.RIGHT; break;
+            }
+        });
+
+        // --- MAIN GAME LOOP ---
+        function loop(timestamp) {
+            let dt = timestamp - lastTime;
+            lastTime = timestamp;
+
+            // Cap dt to prevent huge jumps if tab is inactive
+            if (dt > 100) dt = 100;
+
+            if (!isGameOver) {
+                // Power mode timing logic
+                if (powerMode) {
+                    powerTimer -= dt;
+                    if (powerTimer <= 0) {
+                        powerMode = false;
+                    }
+                }
+
+                // Update entities
+                pacman.update(dt);
+                ghosts.forEach(g => g.update(dt));
+
+                handleCollisions();
+            }
+
+            // Render
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            renderMap(ctx);
+
+            if (!isGameOver) {
+                pacman.draw(ctx);
+                ghosts.forEach(g => g.draw(ctx));
+            } else {
+                // Still draw map and last state, UI overlay handles 'Game Over' text
+                pacman.draw(ctx);
+                ghosts.forEach(g => g.draw(ctx));
+            }
+
+            requestAnimationFrame(loop);
+        }
+
+        // --- START GAME ---
+        initGame();
+        requestAnimationFrame((timestamp) => {
+            lastTime = timestamp;
+            loop(timestamp);
+        });
+
+    </script>
 </body>
+
 </html>
