@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Retro Overworld Map</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="map-container">
+        <img src="assets/map-background.png" alt="Overworld Map" id="map-background">
+        <div id="hitboxes-container"></div>
+    </div>
+
+    <div id="game-overlay" class="hidden">
+        <button id="close-game-btn">
+            <span class="icon">×</span>
+            Close Game / Back to Map
+        </button>
+        <iframe id="game-iframe" src="" frameborder="0"></iframe>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
