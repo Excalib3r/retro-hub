@@ -172,10 +172,10 @@
             mosquito: new Image(),
             pow: new Image()
         };
-        sprites.player.src = 'assets/player.png';
-        sprites.frog.src = 'assets/frog.png';
-        sprites.mosquito.src = 'assets/mosquito.png';
-        sprites.pow.src = 'assets/pow.png';
+        sprites.player.src = 'assets/player.png?v=3';
+        sprites.frog.src = 'assets/frog.png?v=3';
+        sprites.mosquito.src = 'assets/mosquito.png?v=3';
+        sprites.pow.src = 'assets/pow.png?v=3';
 
         // --- GAME STATE ---
         let score = 0;
@@ -312,7 +312,6 @@
                             nextY = powBlock.y + powBlock.h;
                             this.vy = 0;
                             powBlock.hit();
-                            if (this === player) this.onBumpPlatform();
                         }
                     }
                 }
@@ -393,6 +392,18 @@
                 if (this.vx < -0.1 || keys.ArrowLeft || keys.a) {
                     ctx.scale(-1, 1);
                 }
+
+                // Add squash/stretch walking & jumping animation
+                let stretchX = 1;
+                let stretchY = 1;
+                if (this.grounded && Math.abs(this.vx) > 0.1) {
+                    stretchY = 1 + Math.sin(Date.now() / 50) * 0.15;
+                    stretchX = 1 - Math.sin(Date.now() / 50) * 0.05;
+                } else if (!this.grounded) {
+                    stretchY = 1.1;
+                    stretchX = 0.95;
+                }
+                ctx.scale(stretchX, stretchY);
 
                 if (sprites.player.complete && sprites.player.naturalWidth) {
                     // Draw sprite
@@ -513,6 +524,27 @@
                 if (this.state === 'kicked') {
                     ctx.rotate(Date.now() / 100);
                 }
+
+                let stretchX = 1;
+                let stretchY = 1;
+
+                if (this.state === 'active') {
+                    if (this.type === 'mosquito') {
+                        let hoverY = Math.sin(Date.now() / 80) * 8;
+                        ctx.translate(0, hoverY);
+                        // Wings flapping simulation via fast vertical stretch
+                        stretchY = 1 + Math.sin(Date.now() / 20) * 0.1;
+                    } else if (this.type === 'frog') {
+                        if (this.grounded) {
+                            stretchY = 1 + Math.sin(Date.now() / 150) * 0.1;
+                            stretchX = 1 - Math.sin(Date.now() / 150) * 0.05;
+                        } else {
+                            stretchY = 1.2;
+                            stretchX = 0.9;
+                        }
+                    }
+                }
+                ctx.scale(stretchX, stretchY);
 
                 let img = this.type === 'frog' ? sprites.frog : sprites.mosquito;
 
